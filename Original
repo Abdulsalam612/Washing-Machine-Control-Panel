@@ -1,15 +1,19 @@
-heres the code which you wall add into:
-
 #include "mbed.h"
 
-#define WAIT_TIME_MS 100 
-
-
+#define WAIT_TIME_MS 100
 
 // Instantiate a Serial object for communicating with the serial monitor
 BufferedSerial pc(USBTX, USBRX, 115200);
 
+// Washing machine states
+enum MachineState {
+    STATE_OFF,
+    STATE_ON,
+    STATE_WASHING,
+    STATE_PAUSED
+};
 
+MachineState currentState = STATE_OFF;
 
 //Modes Meter
 AnalogIn potentiometer(PA_7);
@@ -27,36 +31,68 @@ DigitalIn button3(PD_2);
 //Buzzer speaker
 PwmOut buzzer(PA_15);
 
-
-
 //7-segment display:
 
 //segment       A       B     C      D    E     F      G        
 BusOut SegDis(PA_11,PA_12,PB_1,PB_15,PB_14,PB_12,PB_11);
 DigitalOut decimal_point(PB_2);
 
-//               0     1     2     3     4     5     6     7     8     9     A     b     C     d     E     F     G     H     i     J     L     n     O     P     r     S     t     U     Y
-int hexDis[] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x77, 0x7C, 0x39, 0x5E, 0x79, 0x71, 0x3D, 0x76, 0x30, 0x1E, 0x38, 0x54, 0x3F, 0x73, 0x50, 0x6D, 0x78, 0x3E, 0x6E};
-
-int dp_status = 0;
-
-
-
 int main() {
-
 
     while (1) {
         float potValue = potentiometer.read(); // read potentiometer value
-        float red = redled.read();
-        float green = greenled.read();
- 
 
+        // Mode selection
         if (potValue < 0.33) {
             SegDis.write(0x06);
         } else if (potValue >= 0.33 && potValue < 0.66) {
             SegDis.write(0x5B);
         } else {
-            SegDis.write(0x4f); 
+            SegDis.write(0x4f);
+        }
+
+        // Button press and state update
+        if (button1.read() == 1) {
+            if (currentState == STATE_OFF) {
+                currentState = STATE_ON;
+            } else {
+                currentState = STATE_OFF;
+            }
+            ThisThread::sleep_for(500ms); // Debounce the button press
+        } else if (currentState != STATE_OFF && button2.read() == 1) {
+            if (currentState == STATE_WASHING) {
+                currentState = STATE_PAUSED;
+            } else if (currentState == STATE_PAUSED) {
+                currentState = STATE_WASHING;
+            }
+            ThisThread::sleep_for(500ms); // Debounce the button press
+        } else if (currentState == STATE_ON && button3.read() == 1) {
+            currentState = STATE_WASHING;
+            ThisThread::sleep_for(500ms); // Debounce the button press
+        }
+
+        // RGB LED control
+        switch (currentState) {
+            case STATE_OFF:
+                redled.write(0.0);
+                greenled.write(0.0);
+                blueled.write(0.0);
+                break;
+            case STATE_ON:
+                redled.write(1.0);
+                greenled.write(0.0);
+                blueled.write(0.0);
+                break;
+            case STATE_WASHING:
+                redled.write(0.0);
+                greenled.write(1.0);
+                blueled.write(0.0);
+                break;
+            case STATE_PAUSED:
+                redled.write(1.0);
+                greenled.write(1.0);
+                blueled.write(0.0);
+                break;
         }
 
         ThisThread::sleep_for(10ms);
