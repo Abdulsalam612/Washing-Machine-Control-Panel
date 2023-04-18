@@ -38,6 +38,8 @@ BusOut SegDis(PA_11,PA_12,PB_1,PB_15,PB_14,PB_12,PB_11);
 DigitalOut decimal_point(PB_2);
 
 int main() {
+    timer.start();
+    bool finished_indicator = false;
     while (1) {
         float potValue = potentiometer.read(); // read potentiometer value
 
@@ -57,11 +59,11 @@ int main() {
             }
             ThisThread::sleep_for(500ms); // Debounce the button press
         } else if (currentState == STATE_ON && button3.read() == 1) {
-             currentState = STATE_WASHING;
+            currentState = STATE_WASHING;
             ThisThread::sleep_for(500ms); // Debounce the button press
         }
 
-        // RGB LED control
+        // RGB LED control and timer logic
         switch (currentState) {
             case STATE_OFF:
                 redled.write(0.0);
@@ -77,11 +79,36 @@ int main() {
                 redled.write(0.0);
                 greenled.write(1.0);
                 blueled.write(0.0);
+                if (timer.elapsed_time().count() >= 1000000) {
+                    remaining_time -= 1;
+                    timer.reset();
+                }
+                if (remaining_time <= 0) {
+                    currentState = STATE_FINISHED;
+                }
                 break;
             case STATE_PAUSED:
                 redled.write(1.0);
                 greenled.write(1.0);
                 blueled.write(0.0);
+                timer.reset();
+                break;
+            case STATE_FINISHED:
+                if (!finished_indicator) {
+                    for (int i = 0; i < 5; i++) {
+                        redled.write(0.0);
+                        greenled.write(1.0);
+                        blueled.write(0.0);
+                        ThisThread::sleep_for(200ms);
+                        greenled.write(0.0);
+                        ThisThread::sleep_for(200ms);
+                    }
+                    redled.write(1.0);
+                    finished_indicator = true;
+                    // Turn off the displays after the green LED flashes and becomes red
+                    SegDis1.write(0x00);
+                    SegDis2.write(0x00);
+                }
                 break;
         }
 
@@ -94,10 +121,15 @@ int main() {
             } else {
                 SegDis2.write(0x4f);
             }
-        } else {
+        } else if (currentState == STATE_WASHING || currentState == STATE_PAUSED) {
+            updateDisplay(remaining_time);
+        } else if (currentState != STATE_FINISHED) {
+            SegDis2.write(0x00); // Turn off the display when the red light is off or in other
+            } else if (currentState != STATE_FINISHED) {
             SegDis2.write(0x00); // Turn off the display when the red light is off or in other conditions
         }
 
         ThisThread::sleep_for(10ms);
     }
+}
 }
