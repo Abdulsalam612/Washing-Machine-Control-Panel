@@ -164,30 +164,56 @@ void playTone(PwmOut &buzzer, float frequency, int duration_ms) {
 int main() {
     timer.start();
     bool finished_indicator = false;
+     int prev_mode = -1;
     while (1) {
         float potValue = potentiometer.read(); // read potentiometer value
+
+        // Check if mode changed
+        int current_mode;
+        if (potValue < 0.33) {
+            current_mode = 0;
+        } else if (potValue >= 0.33 && potValue < 0.66) {
+            current_mode = 1;
+        } else {
+            current_mode = 2;
+        }
+
+        if (current_mode != prev_mode && currentState == STATE_ON) {
+            playTone(buzzer, NOTE_D7, 100); // Play tone when the mode changes
+            prev_mode = current_mode;
+        }
 
         // Button press and state update
         if (button1.read() == 1) {
             if (currentState == STATE_OFF) {
                 currentState = STATE_ON;
-                playTone(buzzer, NOTE_C4, 100); // Play tone when turning on
+                playTone(buzzer, NOTE_C5, 100); // Play tone when turning the washing machine ON
+                finished_indicator = false; // Reset the finished_indicator
+                remaining_time = 60; // Reset the remaining_time
             } else {
+                if (currentState == STATE_FINISHED) {
+                    playTone(buzzer, NOTE_C5, 100); // Play tone when closing the washing machine after finished
+                }
                 currentState = STATE_OFF;
             }
             ThisThread::sleep_for(500ms); // Debounce the button press
         } else if (currentState != STATE_OFF && button2.read() == 1) {
             if (currentState == STATE_WASHING) {
                 currentState = STATE_PAUSED;
-                playTone(buzzer, NOTE_E4, 100); // Play tone when pausing
             } else if (currentState == STATE_PAUSED) {
                 currentState = STATE_WASHING;
-                playTone(buzzer, NOTE_G4, 100); // Play tone when resuming
             }
             ThisThread::sleep_for(500ms); // Debounce the button press
         } else if (currentState == STATE_ON && button3.read() == 1) {
             currentState = STATE_WASHING;
-            playTone(buzzer, NOTE_A4, 100); // Play tone when starting wash
+            playTone(buzzer, NOTE_F5, 100); // Play tone when the machine starts washing
+            if (current_mode == 0) {
+                remaining_time = 30;
+            } else if (current_mode == 1) {
+                remaining_time = 45;
+            } else {
+                remaining_time = 60;
+            }
             ThisThread::sleep_for(500ms); // Debounce the button press
         }
 
@@ -227,7 +253,7 @@ int main() {
                         redled.write(0.0);
                         greenled.write(1.0);
                         blueled.write(0.0);
-                        playTone(buzzer, NOTE_C5, 100); // Play tone while flashing green light
+                        playTone(buzzer, NOTE_E6, 200); // Play tone while flashing green light
                         ThisThread::sleep_for(100ms);
                         greenled.write(0.0);
                         ThisThread::sleep_for(200ms);
@@ -241,7 +267,7 @@ int main() {
             break;
     }
 
-    // Display control
+    // Display control for modes and timer
     if (currentState == STATE_ON && redled.read() == 1.0) {
         if (potValue < 0.33) {
             SegDis1.write(0x3F);
