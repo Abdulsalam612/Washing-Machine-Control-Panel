@@ -1,19 +1,12 @@
 #include "mbed.h"
 
-#define WAIT_TIME_MS 100
+#define WAIT_TIME_MS 100 
+
 
 // Instantiate a Serial object for communicating with the serial monitor
 BufferedSerial pc(USBTX, USBRX, 115200);
 
-// Washing machine states
-enum MachineState {
-    STATE_OFF,
-    STATE_ON,
-    STATE_WASHING,
-    STATE_PAUSED
-};
 
-MachineState currentState = STATE_OFF;
 
 //Modes Meter
 AnalogIn potentiometer(PA_7);
@@ -29,13 +22,144 @@ DigitalIn button2(PC_11);
 DigitalIn button3(PD_2);
 
 //Buzzer speaker
-PwmOut buzzer(PA_15);
+PwmOut buzzer(PB_0);
 
-//7-segment display:
+// Note definitions from Arduino.cc
+#define NOTE_B0  31
+#define NOTE_C1  33
+#define NOTE_CS1 35
+#define NOTE_D1  37
+#define NOTE_DS1 39
+#define NOTE_E1  41
+#define NOTE_F1  44
+#define NOTE_FS1 46
+#define NOTE_G1  49
+#define NOTE_GS1 52
+#define NOTE_A1  55
+#define NOTE_AS1 58
+#define NOTE_B1  62
+#define NOTE_C2  65
+#define NOTE_CS2 69
+#define NOTE_D2  73
+#define NOTE_DS2 78
+#define NOTE_E2  82
+#define NOTE_F2  87
+#define NOTE_FS2 93
+#define NOTE_G2  98
+#define NOTE_GS2 104
+#define NOTE_A2  110
+#define NOTE_AS2 117
+#define NOTE_B2  123
+#define NOTE_C3  131
+#define NOTE_CS3 139
+#define NOTE_D3  147
+#define NOTE_DS3 156
+#define NOTE_E3  165
+#define NOTE_F3  175
+#define NOTE_FS3 185
+#define NOTE_G3  196
+#define NOTE_GS3 208
+#define NOTE_A3  220
+#define NOTE_AS3 233
+#define NOTE_B3  247
+#define NOTE_C4  262
+#define NOTE_CS4 277
+#define NOTE_D4  294
+#define NOTE_DS4 311
+#define NOTE_E4  330
+#define NOTE_F4  349
+#define NOTE_FS4 370
+#define NOTE_G4  392
+#define NOTE_GS4 415
+#define NOTE_A4  440
+#define NOTE_AS4 466
+#define NOTE_B4  494
+#define NOTE_C5  523
+#define NOTE_CS5 554
+#define NOTE_D5  587
+#define NOTE_DS5 622
+#define NOTE_E5  659
+#define NOTE_F5  698
+#define NOTE_FS5 740
+#define NOTE_G5  784
+#define NOTE_GS5 831
+#define NOTE_A5  880
+#define NOTE_AS5 932
+#define NOTE_B5  988
+#define NOTE_C6  1047
+#define NOTE_CS6 1109
+#define NOTE_D6  1175
+#define NOTE_DS6 1245
+#define NOTE_E6  1319
+#define NOTE_F6  1397
+#define NOTE_FS6 1480
+#define NOTE_G6  1568
+#define NOTE_GS6 1661
+#define NOTE_A6  1760
+#define NOTE_AS6 1865
+#define NOTE_B6  1976
+#define NOTE_C7  2093
+#define NOTE_CS7 2217
+#define NOTE_D7  2349
+#define NOTE_DS7 2489
+#define NOTE_E7  2637
+#define NOTE_F7  2794
+#define NOTE_FS7 2960
+#define NOTE_G7  3136
+#define NOTE_GS7 3322
+#define NOTE_A7  3520
+#define NOTE_AS7 3729
+#define NOTE_B7  3951
+#define NOTE_C8  4186
+#define NOTE_CS8 4435
+#define NOTE_D8  4699
+#define NOTE_DS8 4978
 
+
+//7-segment displays:
+
+//Left Display:
 //segment       A       B     C      D    E     F      G        
-BusOut SegDis(PA_11,PA_12,PB_1,PB_15,PB_14,PB_12,PB_11);
-DigitalOut decimal_point(PB_2);
+BusOut SegDis1(PA_11,PA_12,PB_1,PB_15,PB_14,PB_12,PB_11);
+DigitalOut decimal_point1(PB_2);
+//Right Display:
+//segment       A       B     C      D    E     F      G        
+BusOut SegDis2(PA_14,PA_13,PC_0,PC_2,PC_3,PA_15,PB_7);
+DigitalOut decimal_point2(PC_1);
+
+//               0     1     2     3     4     5     6     7     8     9     A     b     C     d     E     F     G     H     i     J     L     n     O     P     r     S     t     U     Y
+int hexDis[] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x77, 0x7C, 0x39, 0x5E, 0x79, 0x71, 0x3D, 0x76, 0x30, 0x1E, 0x38, 0x54, 0x3F, 0x73, 0x50, 0x6D, 0x78, 0x3E, 0x6E};
+int dp_status = 0;
+
+
+// Timer
+Timer timer;
+int remaining_time = 60;
+
+void updateDisplay(int time) {
+    int tens_digit = time / 10;
+    int units_digit = time % 10;
+    SegDis1.write(hexDis[tens_digit]);
+    SegDis2.write(hexDis[units_digit]);
+}
+
+// Washing machine states
+enum MachineState {
+    STATE_OFF,
+    STATE_ON,
+    STATE_WASHING,
+    STATE_PAUSED,
+    STATE_FINISHED
+};
+
+MachineState currentState = STATE_OFF;
+
+void playTone(PwmOut &buzzer, float frequency, int duration_ms) {
+    buzzer.period(1.0 / frequency);
+    buzzer.write(0.5f); // 50% duty cycle
+    ThisThread::sleep_for(duration_ms);
+    buzzer.write(0.0f); // Stop playing tone
+}
 
 int main() {
     timer.start();
@@ -47,6 +171,7 @@ int main() {
         if (button1.read() == 1) {
             if (currentState == STATE_OFF) {
                 currentState = STATE_ON;
+                playTone(buzzer, NOTE_C4, 100); // Play tone when turning on
             } else {
                 currentState = STATE_OFF;
             }
@@ -54,12 +179,15 @@ int main() {
         } else if (currentState != STATE_OFF && button2.read() == 1) {
             if (currentState == STATE_WASHING) {
                 currentState = STATE_PAUSED;
+                playTone(buzzer, NOTE_E4, 100); // Play tone when pausing
             } else if (currentState == STATE_PAUSED) {
                 currentState = STATE_WASHING;
+                playTone(buzzer, NOTE_G4, 100); // Play tone when resuming
             }
             ThisThread::sleep_for(500ms); // Debounce the button press
         } else if (currentState == STATE_ON && button3.read() == 1) {
             currentState = STATE_WASHING;
+            playTone(buzzer, NOTE_A4, 100); // Play tone when starting wash
             ThisThread::sleep_for(500ms); // Debounce the button press
         }
 
@@ -99,37 +227,43 @@ int main() {
                         redled.write(0.0);
                         greenled.write(1.0);
                         blueled.write(0.0);
-                        ThisThread::sleep_for(200ms);
+                        playTone(buzzer, NOTE_C5, 100); // Play tone while flashing green light
+                        ThisThread::sleep_for(100ms);
                         greenled.write(0.0);
                         ThisThread::sleep_for(200ms);
                     }
                     redled.write(1.0);
                     finished_indicator = true;
                     // Turn off the displays after the green LED flashes and becomes red
-                    SegDis1.write(0x00);
-                    SegDis2.write(0x00);
-                }
-                break;
-        }
-
-        // Display control
-        if (currentState == STATE_ON && redled.read() == 1.0) {
-            if (potValue < 0.33) {
-                SegDis2.write(0x06);
-            } else if (potValue >= 0.33 && potValue < 0.66) {
-                SegDis2.write(0x5B);
-            } else {
-                SegDis2.write(0x4f);
+                SegDis1.write(0x00);
+                SegDis2.write(0x00);
             }
-        } else if (currentState == STATE_WASHING || currentState == STATE_PAUSED) {
-            updateDisplay(remaining_time);
-        } else if (currentState != STATE_FINISHED) {
-            SegDis2.write(0x00); // Turn off the display when the red light is off or in other
-            } else if (currentState != STATE_FINISHED) {
-            SegDis2.write(0x00); // Turn off the display when the red light is off or in other conditions
-        }
-
-        ThisThread::sleep_for(10ms);
+            break;
     }
+
+    // Display control
+    if (currentState == STATE_ON && redled.read() == 1.0) {
+        if (potValue < 0.33) {
+            SegDis1.write(0x3F);
+            SegDis2.write(0x06);
+            
+        } else if (potValue >= 0.33 && potValue < 0.66) {
+            SegDis1.write(0x3F);
+            SegDis2.write(0x5B);
+        } else {
+            SegDis1.write(0x3F);
+            SegDis2.write(0x4f);
+        }
+    } else if (currentState == STATE_WASHING || currentState == STATE_PAUSED) {
+        updateDisplay(remaining_time);
+    } else if (currentState != STATE_FINISHED) {
+        SegDis1.write(0x00);
+        SegDis2.write(0x00); // Turn off the display when the red light is off or in other conditions
+    } else if (currentState != STATE_FINISHED) {
+        SegDis2.write(0x00); // Turn off the display when the red light is off or in other conditions
+        SegDis1.write(0x00);
+    }
+
+    ThisThread::sleep_for(10ms);
 }
 }
