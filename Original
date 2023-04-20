@@ -1,6 +1,9 @@
 #include "mbed.h"
 
-#define WAIT_TIME_MS 100 
+#define WAIT_TIME_MS 100ms
+
+//constant for FSR threshold
+#define FSR_THRESHOLD 0.3
 
 
 // Instantiate a Serial object for communicating with the serial monitor
@@ -23,6 +26,9 @@ DigitalIn button3(PD_2);
 
 //Buzzer speaker
 PwmOut buzzer(PB_0);
+
+//Force Sensor
+AnalogIn FSR(PA_1);
 
 // Note definitions from Arduino.cc
 #define NOTE_B0  31
@@ -151,9 +157,12 @@ enum MachineState {
     STATE_PAUSED,
     STATE_FINISHED
 };
-
+//make initial state of machine OFF
 MachineState currentState = STATE_OFF;
 
+
+
+//Function to play sound
 void playTone(PwmOut &buzzer, float frequency, int duration_ms) {
     buzzer.period(1.0 / frequency);
     buzzer.write(0.5f); // 50% duty cycle
@@ -161,10 +170,27 @@ void playTone(PwmOut &buzzer, float frequency, int duration_ms) {
     buzzer.write(0.0f); // Stop playing tone
 }
 
+//User Instructions for using the machine
+void print_instructions() {
+    printf("Washing Machine Instructions:\r\n");
+    printf("1. Press Button 1 (Left Button) to turn the machine ON/OFF.\r\n");
+    printf("2. Adjust the potentiometer to select the washing mode.\r\n");
+    printf("   - Mode 1: (30 seconds)\r\n");
+    printf("   - Mode 2: (45 seconds)\r\n");
+    printf("   - Mode 3: (60 seconds)\r\n");
+    printf("3. Press Button 3 (Right Button) to start the washing cycle.\r\n");
+    printf("4. Press Button 2 (Middle Button) to pause/resume the washing cycle.\r\n");
+    printf("5. Press Button 1 (Left Button) to turn OFF the machine when the cycle is finished.\r\n");
+    printf("\r\n");
+}
+
+
 int main() {
+    print_instructions(); //print the instructions
     timer.start();
     bool finished_indicator = false;
      int prev_mode = -1;
+     MachineState prevState = currentState;
     while (1) {
         float potValue = potentiometer.read(); // read potentiometer value
 
@@ -216,6 +242,26 @@ int main() {
             }
             ThisThread::sleep_for(500ms); // Debounce the button press
         }
+        if (prevState != currentState) {
+        switch (currentState) {
+            case STATE_OFF:
+                printf("Status: Machine is OFF\r\n");
+                break;
+            case STATE_ON:
+                printf("Status: Machine is ON\r\n");
+                break;
+            case STATE_WASHING:
+                printf("Status: Machine is WASHING\r\n");
+                break;
+            case STATE_PAUSED:
+                printf("Status: Machine is PAUSED\r\n");
+                break;
+            case STATE_FINISHED:
+                printf("Status: Machine is FINISHED\r\n");
+                break;
+        }
+        prevState = currentState;
+    }
 
         // RGB LED control and timer logic
         switch (currentState) {
@@ -289,7 +335,8 @@ int main() {
         SegDis2.write(0x00); // Turn off the display when the red light is off or in other conditions
         SegDis1.write(0x00);
     }
-
-    ThisThread::sleep_for(10ms);
+    
+    
+    ThisThread::sleep_for(100ms);
 }
 }
