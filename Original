@@ -1,21 +1,15 @@
 #include "mbed.h"
 
-#define WAIT_TIME_MS 100
+#define WAIT_TIME_MS 100ms
 
 // Instantiate a Serial object for communicating with the serial monitor
 BufferedSerial pc(USBTX, USBRX, 115200);
 
-// Washing machine states
-enum MachineState {
-    STATE_OFF,
-    STATE_ON,
-    STATE_WASHING,
-    STATE_PAUSED
-};
 
-MachineState currentState = STATE_OFF;
+//        COMPONENTS:
 
-//Modes Meter
+
+//Modes Potentiometer
 AnalogIn potentiometer(PA_7);
 
 //MultiLED
@@ -29,23 +23,201 @@ DigitalIn button2(PC_11);
 DigitalIn button3(PD_2);
 
 //Buzzer speaker
-PwmOut buzzer(PA_15);
+PwmOut buzzer(PB_0);
 
-//7-segment display:
+//Force Sensor
+AnalogIn FSR(PA_1);
 
+
+//7-segment displays:
+
+//Left Display:
 //segment       A       B     C      D    E     F      G        
-BusOut SegDis(PA_11,PA_12,PB_1,PB_15,PB_14,PB_12,PB_11);
-DigitalOut decimal_point(PB_2);
+BusOut SegDis1(PA_11,PA_12,PB_1,PB_15,PB_14,PB_12,PB_11);
+DigitalOut decimal_point1(PB_2);
+//Right Display:
+//segment       A       B     C      D    E     F      G        
+BusOut SegDis2(PA_14,PA_13,PC_0,PC_2,PC_3,PA_15,PB_7);
+DigitalOut decimal_point2(PC_1);
+
+// 7-segment display numbers and letters hex values
+//               0     1     2     3     4     5     6     7     8     9     A     b     C     d     E     F     G     H     i     J     L     n     O     P     r     S     t     U     Y
+int hexDis[] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x77, 0x7C, 0x39, 0x5E, 0x79, 0x71, 0x3D, 0x76, 0x30, 0x1E, 0x38, 0x54, 0x3F, 0x73, 0x50, 0x6D, 0x78, 0x3E, 0x6E};
+int dp_status = 0;
+
+
+// Note definitions from Arduino.cc
+#define NOTE_C5  523
+#define NOTE_E5  659
+#define NOTE_F5  698
+#define NOTE_DS6 1245
+#define NOTE_E6  1319
+#define NOTE_D7  2349
+
+// Note variables for status changes
+#define NOTE_ON      NOTE_C5
+#define NOTE_OFF     NOTE_C5
+#define NOTE_START   NOTE_F5
+#define NOTE_PAUSE   NOTE_D7
+#define NOTE_MODE_CHANGE NOTE_D7
+#define NOTE_FINISHED NOTE_E6
+
+// Washing machine states
+enum MachineState {
+    STATE_OFF,
+    STATE_ON,
+    STATE_WASHING,
+    STATE_PAUSED,
+    STATE_FINISHED,
+};
+//make initial state of machine OFF
+MachineState currentState = STATE_OFF;
+
+//User Instructions for using the machine
+void print_instructions() {
+    printf("Washing Machine Instructions:\r\n");
+    printf("1. Press Button 1 (Left Button) to turn the washing machine ON/OFF.\r\n");
+    printf("2. Adjust the potentiometer to select the washing mode.\r\n");
+    printf("   - Eco-friendly mode (EF) (30 minutes) \r\n");
+    printf("   - Delicate mode (dL) (45 minutes) \r\n");
+    printf("   - Hard wash mode (Hd) (60 minutes)\r\n");
+    printf("3. Press Force Sensor to lock and unlock washing machine door.\r\n");
+    printf("4. Press Button 3 (Right Button) to start the washing cycle.\r\n");
+    printf("5. Press Button 2 (Middle Button) to pause/resume the washing cycle.\r\n");
+    printf("\r\n");
+}
+
+
+// Timer and remaining time variables
+Timer timer;
+int remaining_time = 0;
+
+
+// Update the 7-segment display with the remaining time
+void updateDisplay(int time) {
+    int tens_digit = time / 10;
+    int units_digit = time % 10;
+    SegDis1.write(hexDis[tens_digit]);
+    SegDis2.write(hexDis[units_digit]);
+}
+
+
+// Door status variables
+bool door_closed = false;
+bool prev_door_status = false;
+
+// Function to play a tone using the buzzer
+void playTone(PwmOut &buzzer, float frequency, int duration_ms) {
+    buzzer.period(1.0 / frequency);
+    buzzer.write(0.5f); // 50% duty cycle
+    ThisThread::sleep_for(std::chrono::milliseconds(duration_ms));
+    buzzer.write(0.0f); // Stop playing tone
+}
+
+// Print the selected washing mode
+void print_selected_mode(int mode) {
+    switch (mode) {
+        case 0:
+            printf("Selected Mode: Eco-Friendly\r\n");
+            break;
+        case 1:
+            printf("Selected Mode: Delicate\r\n");
+            break;
+        case 2:
+            printf("Selected Mode: Hard Wash\r\n");
+            break;
+        default:
+            printf("Unknown Mode\r\n");
+            break;
+    }
+}
 
 int main() {
+    print_instructions(); //print the instructions
+    timer.start(); //start timer
+    bool finished_indicator = false;
+     int prev_mode = -1;
+     MachineState prevState = currentState;
+
+     //Main loop
     while (1) {
+    
+
+
+        // Update door status in the serial monitor
+        if (prev_door_status != door_closed) {
+            if (door_closed) {
+                printf("Door Status: LOCKED\r\n");
+            } else {
+                printf("Door Status: UNLOCKED\r\n");
+            }
+            prev_door_status = door_closed;
+        }
+
+         //Update washing machine status in serial monitor
+         if (prevState != currentState) {
+        switch (currentState) {
+            case STATE_OFF:
+                printf("Status: Machine is OFF\r\n");
+                break;
+            case STATE_ON:
+                printf("Status: Machine is ON\r\n");
+                break;
+            case STATE_WASHING:
+                printf("Status: Machine is WASHING\r\n");
+                break;
+            case STATE_PAUSED:
+                printf("Status: Machine is PAUSED\r\n");
+                break;
+            case STATE_FINISHED:
+                printf("Status: Machine is FINISHED\r\n");
+                break;
+        }
+        prevState = currentState;
+    }
+
+        // Read force sensor value and update door status
+        float fsr_value = FSR.read(); //read force sensor value
+        //You cant open or close the door when machine is washing or paused
+        if (currentState != STATE_WASHING && currentState != STATE_PAUSED) {
+           if (fsr_value > 0.1 && !door_closed) {
+            door_closed = true;
+            ThisThread::sleep_for(500ms); // Debounce the sensor press
+            } else if (fsr_value > 0.1 && door_closed) {
+            door_closed = false;
+            ThisThread::sleep_for(500ms); // Debounce the sensor press
+            }
+        }
+
+        // Chande modes depending on potentiometer value
         float potValue = potentiometer.read(); // read potentiometer value
+        int current_mode;
+        if (potValue < 0.33) {
+            current_mode = 0; //eco friendly mode
+        } else if (potValue >= 0.33 && potValue < 0.66) {
+            current_mode = 1; // Delicate mode
+        } else {
+            current_mode = 2; //Hard wash mode
+        }
+
+        // Update the display and print the selected washing mode
+        if (current_mode != prev_mode && currentState == STATE_ON) {
+            playTone(buzzer, NOTE_MODE_CHANGE, 100); // Play tone when the mode changes
+            print_selected_mode(current_mode); // Print the selected mode on the serial monitor
+            prev_mode = current_mode;
+        }
 
         // Button press and state update
         if (button1.read() == 1) {
             if (currentState == STATE_OFF) {
                 currentState = STATE_ON;
+                playTone(buzzer, NOTE_ON, 100); // Play tone when turning the washing machine ON
+                finished_indicator = false; // Reset the finished_indicator
+                remaining_time = 60; // Reset the remaining_time
             } else {
+                if (currentState == STATE_FINISHED) {
+                    playTone(buzzer, NOTE_OFF, 100); // Play tone when closing the washing machine after finished
+                }
                 currentState = STATE_OFF;
             }
             ThisThread::sleep_for(500ms); // Debounce the button press
@@ -57,11 +229,24 @@ int main() {
             }
             ThisThread::sleep_for(500ms); // Debounce the button press
         } else if (currentState == STATE_ON && button3.read() == 1) {
-             currentState = STATE_WASHING;
+            if (door_closed) {
+                currentState = STATE_WASHING;
+                playTone(buzzer, NOTE_START, 100); // Play tone when the machine starts washing
+                if (current_mode == 0) {
+                    remaining_time = 30;
+                } else if (current_mode == 1) {
+                    remaining_time = 45;
+                } else {
+                    remaining_time = 60;
+                }
+            } else {
+                printf("Warning: Door is open! Please close the door before starting the washing cycle.\r\n");
+            }
             ThisThread::sleep_for(500ms); // Debounce the button press
         }
 
-        // RGB LED control
+
+        // RGB LED control and timer logic
         switch (currentState) {
             case STATE_OFF:
                 redled.write(0.0);
@@ -77,27 +262,64 @@ int main() {
                 redled.write(0.0);
                 greenled.write(1.0);
                 blueled.write(0.0);
+                if (timer.elapsed_time().count() >= 1000000) {
+                    remaining_time -= 1;
+                    timer.reset();
+                }
+                if (remaining_time <= 0) {
+                    currentState = STATE_FINISHED;
+                }
                 break;
             case STATE_PAUSED:
                 redled.write(1.0);
                 greenled.write(1.0);
                 blueled.write(0.0);
+                timer.reset();
                 break;
-        }
-
-        // Display control
-        if (currentState == STATE_ON && redled.read() == 1.0) {
-            if (potValue < 0.33) {
-                SegDis2.write(0x06);
-            } else if (potValue >= 0.33 && potValue < 0.66) {
-                SegDis2.write(0x5B);
-            } else {
-                SegDis2.write(0x4f);
+            case STATE_FINISHED:
+                if (!finished_indicator) {
+                    for (int i = 0; i < 5; i++) {//have led flashing when mashine finished washing
+                        redled.write(0.0);
+                        greenled.write(1.0);
+                        blueled.write(0.0);
+                        playTone(buzzer, NOTE_FINISHED, 200); // Play tone while flashing green light
+                        ThisThread::sleep_for(100ms);
+                        greenled.write(0.0);
+                        ThisThread::sleep_for(200ms);
+                    }
+                    redled.write(1.0);
+                    finished_indicator = true;
+                    // Turn off the displays after the green LED flashes and becomes red
+                SegDis1.write(0x00);
+                SegDis2.write(0x00);
             }
-        } else {
-            SegDis2.write(0x00); // Turn off the display when the red light is off or in other conditions
-        }
-
-        ThisThread::sleep_for(10ms);
+            break;
     }
+
+    // 7-segment Display control for mode selection and timer
+    if (currentState == STATE_ON && redled.read() == 1.0) {
+        if (potValue < 0.33) {
+            SegDis1.write(0x79);
+            SegDis2.write(0x71);
+            
+        } else if (potValue >= 0.33 && potValue < 0.66) {
+            SegDis1.write(0x5E);
+            SegDis2.write(0x38);
+        } else {
+            SegDis1.write(0x76);
+            SegDis2.write(0x5E);
+        }
+    } else if (currentState == STATE_WASHING || currentState == STATE_PAUSED) {
+        updateDisplay(remaining_time);
+    } else if (currentState != STATE_FINISHED) {
+        SegDis1.write(0x00);
+        SegDis2.write(0x00); // Turn off the display when the red light is off or in other conditions
+    } else if (currentState != STATE_FINISHED) {
+        SegDis2.write(0x00); // Turn off the display when the red light is off or in other conditions
+        SegDis1.write(0x00);
+    }
+    
+    
+    ThisThread::sleep_for(100ms);
+}
 }
