@@ -1,22 +1,25 @@
 #include "mbed.h"
 
-#define WAIT_TIME_MS 100 
-
+#define WAIT_TIME_MS 100ms
 
 // Instantiate a Serial object for communicating with the serial monitor
 BufferedSerial pc(USBTX, USBRX, 115200);
 
 
+//        COMPONENTS:
 
-//Modes Meter
+//Modes Potentiometer
 AnalogIn potentiometer(PA_7);
 
 //MultiLED
-PwmOut redled(PB_3); //define PWM pins for RGB LED
+PwmOut redled(PB_3);
 PwmOut greenled(PB_5);
 PwmOut blueled(PB_4);
 
-//buttons from left to right
+//Blue LED
+DigitalOut blueLED(PC_5);
+
+//Buttons from left to right
 DigitalIn button1(PC_10);
 DigitalIn button2(PC_11);
 DigitalIn button3(PD_2);
@@ -24,100 +27,12 @@ DigitalIn button3(PD_2);
 //Buzzer speaker
 PwmOut buzzer(PB_0);
 
-// Note definitions from Arduino.cc
-#define NOTE_B0  31
-#define NOTE_C1  33
-#define NOTE_CS1 35
-#define NOTE_D1  37
-#define NOTE_DS1 39
-#define NOTE_E1  41
-#define NOTE_F1  44
-#define NOTE_FS1 46
-#define NOTE_G1  49
-#define NOTE_GS1 52
-#define NOTE_A1  55
-#define NOTE_AS1 58
-#define NOTE_B1  62
-#define NOTE_C2  65
-#define NOTE_CS2 69
-#define NOTE_D2  73
-#define NOTE_DS2 78
-#define NOTE_E2  82
-#define NOTE_F2  87
-#define NOTE_FS2 93
-#define NOTE_G2  98
-#define NOTE_GS2 104
-#define NOTE_A2  110
-#define NOTE_AS2 117
-#define NOTE_B2  123
-#define NOTE_C3  131
-#define NOTE_CS3 139
-#define NOTE_D3  147
-#define NOTE_DS3 156
-#define NOTE_E3  165
-#define NOTE_F3  175
-#define NOTE_FS3 185
-#define NOTE_G3  196
-#define NOTE_GS3 208
-#define NOTE_A3  220
-#define NOTE_AS3 233
-#define NOTE_B3  247
-#define NOTE_C4  262
-#define NOTE_CS4 277
-#define NOTE_D4  294
-#define NOTE_DS4 311
-#define NOTE_E4  330
-#define NOTE_F4  349
-#define NOTE_FS4 370
-#define NOTE_G4  392
-#define NOTE_GS4 415
-#define NOTE_A4  440
-#define NOTE_AS4 466
-#define NOTE_B4  494
-#define NOTE_C5  523
-#define NOTE_CS5 554
-#define NOTE_D5  587
-#define NOTE_DS5 622
-#define NOTE_E5  659
-#define NOTE_F5  698
-#define NOTE_FS5 740
-#define NOTE_G5  784
-#define NOTE_GS5 831
-#define NOTE_A5  880
-#define NOTE_AS5 932
-#define NOTE_B5  988
-#define NOTE_C6  1047
-#define NOTE_CS6 1109
-#define NOTE_D6  1175
-#define NOTE_DS6 1245
-#define NOTE_E6  1319
-#define NOTE_F6  1397
-#define NOTE_FS6 1480
-#define NOTE_G6  1568
-#define NOTE_GS6 1661
-#define NOTE_A6  1760
-#define NOTE_AS6 1865
-#define NOTE_B6  1976
-#define NOTE_C7  2093
-#define NOTE_CS7 2217
-#define NOTE_D7  2349
-#define NOTE_DS7 2489
-#define NOTE_E7  2637
-#define NOTE_F7  2794
-#define NOTE_FS7 2960
-#define NOTE_G7  3136
-#define NOTE_GS7 3322
-#define NOTE_A7  3520
-#define NOTE_AS7 3729
-#define NOTE_B7  3951
-#define NOTE_C8  4186
-#define NOTE_CS8 4435
-#define NOTE_D8  4699
-#define NOTE_DS8 4978
-
+//Sensors
+AnalogIn FSR(PA_1);
+AnalogIn LDR(PA_4);
+AnalogIn TMP(PA_0);
 
 //7-segment displays:
-
 //Left Display:
 //segment       A       B     C      D    E     F      G        
 BusOut SegDis1(PA_11,PA_12,PB_1,PB_15,PB_14,PB_12,PB_11);
@@ -127,21 +42,37 @@ DigitalOut decimal_point1(PB_2);
 BusOut SegDis2(PA_14,PA_13,PC_0,PC_2,PC_3,PA_15,PB_7);
 DigitalOut decimal_point2(PC_1);
 
+// 7-segment display numbers and letters hex values
 //               0     1     2     3     4     5     6     7     8     9     A     b     C     d     E     F     G     H     i     J     L     n     O     P     r     S     t     U     Y
 int hexDis[] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x77, 0x7C, 0x39, 0x5E, 0x79, 0x71, 0x3D, 0x76, 0x30, 0x1E, 0x38, 0x54, 0x3F, 0x73, 0x50, 0x6D, 0x78, 0x3E, 0x6E};
 int dp_status = 0;
 
+// Note definitions from Arduino.cc
+#define NOTE_E5  659
+#define NOTE_F5  698
+#define NOTE_G5  784
+#define NOTE_E6  1319
+#define NOTE_D7  2349
+#define NOTE_C4  262
+#define NOTE_D4  294
+#define NOTE_E4  330
+#define NOTE_F4  349
+#define NOTE_G4  392
+#define NOTE_A4  440
+#define NOTE_B4  494
+#define NOTE_C5  523
+#define NOTE_Cs4 277
+#define NOTE_Ds4 311
+#define NOTE_Gs4 415
+#define NOTE_Bs4 554
 
-// Timer
-Timer timer;
-int remaining_time = 60;
-
-void updateDisplay(int time) {
-    int tens_digit = time / 10;
-    int units_digit = time % 10;
-    SegDis1.write(hexDis[tens_digit]);
-    SegDis2.write(hexDis[units_digit]);
-}
+// Note variables for status changing sounds
+#define NOTE_ON      NOTE_C5
+#define NOTE_OFF     NOTE_C5
+#define NOTE_START   NOTE_F5
+#define NOTE_PAUSE   NOTE_D7
+#define NOTE_MODE_CHANGE NOTE_D7
+#define NOTE_FINISHED NOTE_E6
 
 // Washing machine states
 enum MachineState {
@@ -149,73 +80,244 @@ enum MachineState {
     STATE_ON,
     STATE_WASHING,
     STATE_PAUSED,
-    STATE_FINISHED
+    STATE_FINISHED,
 };
-
+//initial state of machine OFF
 MachineState currentState = STATE_OFF;
 
+//User Instructions for using the washing machine
+void print_instructions() {
+    printf("Washing Machine Instructions:\r\n");
+    printf("1. Press Button 1 (Left Button) to turn the washing machine ON/OFF.\r\n");
+    printf("2. Adjust the potentiometer to select the washing mode.\r\n");
+    printf("   - Eco-friendly mode (EF) (30 minutes) \r\n");
+    printf("   - Delicate mode (dL) (45 minutes) \r\n");
+    printf("   - Hard wash mode (Hd) (60 minutes)\r\n");
+    printf("3. Press Force Sensor to close and open washing machine door.\r\n");
+    printf("4. Press Button 3 (Right Button) to start the washing cycle.\r\n");
+    printf("5. Press Button 2 (Middle Button) to pause/resume the washing cycle.\r\n");
+    printf("\r\n");
+}
+
+// Timer and remaining time variables
+Timer timer;
+int remaining_time = 0;
+
+// function to Update the 7-segment display with the remaining time
+void updateDisplay(int time) {
+    int tens_digit = time / 10;
+    int units_digit = time % 10;
+    SegDis1.write(hexDis[tens_digit]);
+    SegDis2.write(hexDis[units_digit]);
+}
+
+// Door status variables
+bool door_closed = false;
+bool prev_door_status = false;
+
+// Function to play a tone using the buzzer
 void playTone(PwmOut &buzzer, float frequency, int duration_ms) {
     buzzer.period(1.0 / frequency);
     buzzer.write(0.5f); // 50% duty cycle
-    ThisThread::sleep_for(duration_ms);
+    ThisThread::sleep_for(std::chrono::milliseconds(duration_ms));
     buzzer.write(0.0f); // Stop playing tone
 }
 
+// Function to set the RGB LED color
+void set_rgb_color(float r, float g, float b) {
+    redled.write(r);
+    greenled.write(g);
+    blueled.write(b);
+}
+
+// Function to animate the RGB LED
+void animate_rgb_led() {
+    float rgb_values[] = {1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f};
+    for (int i = 0; i < 11; i += 3) {
+        set_rgb_color(rgb_values[i], rgb_values[i + 1], rgb_values[i + 2]);
+        ThisThread::sleep_for(100ms);
+    }
+}
+
+//Loading animation when turning machien on:
+
+
+//Loading circle pins in order
+DigitalOut dis1(PA_11);
+DigitalOut dis2(PA_14);
+DigitalOut dis3(PA_13);
+DigitalOut dis4(PC_0);
+DigitalOut dis5(PC_2);
+DigitalOut dis6(PB_15);
+DigitalOut dis7(PB_14);
+DigitalOut dis8(PB_12);
+
+//Loading Circle Animation
+void display_loading_circle(){
+    dis1 = !dis1;
+    ThisThread::sleep_for(50ms);
+    dis2 = !dis2;
+    ThisThread::sleep_for(50ms);
+    dis3 = !dis3;
+    ThisThread::sleep_for(50ms);
+    dis4 = !dis4;
+    ThisThread::sleep_for(50ms);
+    dis5 = !dis5;
+    ThisThread::sleep_for(50ms);
+    dis6 = !dis6;
+    ThisThread::sleep_for(50ms);
+    dis7 = !dis7;
+    ThisThread::sleep_for(50ms);
+    dis8 = !dis8;
+    ThisThread::sleep_for(50ms);
+}
+
+//Washing Machine turning on animation
+void loading_animation() {
+         
+    display_loading_circle();
+    display_loading_circle();
+    display_loading_circle();
+    display_loading_circle();
+    display_loading_circle();
+    animate_rgb_led();
+}
+
+// Turning on Music
+void play_startup_song(PwmOut &buzzer) {
+    int song_notes[] = {NOTE_C4, NOTE_E4, NOTE_G4, NOTE_C5, NOTE_E5, NOTE_G5};
+    int note_durations[] = {100, 100, 100, 100, 100, 100};
+
+    for (int i = 0; i < 6; i++) {
+        playTone(buzzer, song_notes[i], note_durations[i]);
+        ThisThread::sleep_for(50ms);
+    }
+}
+
+//Starting Wash Music
+void play_washing_song(PwmOut &buzzer) {
+    int washing_notes[] = {NOTE_C4, NOTE_D4, NOTE_E4, NOTE_F4, NOTE_G4, NOTE_A4, NOTE_B4, NOTE_C5};
+    int washing_durations[] = {125, 125, 125, 125, 125, 125, 125, 125};
+
+    for (int i = 0; i < 8; i++) {
+        playTone(buzzer, washing_notes[i], washing_durations[i]);
+        ThisThread::sleep_for(50ms);
+    }
+}
+
+
+// function to print the selected washing mode
+void print_selected_mode(int mode) {
+    switch (mode) {
+        case 0:
+            printf("Selected Mode: Eco-Friendly\r\n");
+            break;
+        case 1:
+            printf("Selected Mode: Delicate\r\n");
+            break;
+        case 2:
+            printf("Selected Mode: Hard Wash\r\n");
+            break;
+    }
+}
+
+
 int main() {
-    timer.start();
+    print_instructions(); //print washing instructions
+    timer.start(); //start timer
     bool finished_indicator = false;
      int prev_mode = -1;
+     MachineState prevState = currentState;
+
+     //Main loop
     while (1) {
-        float potValue = potentiometer.read(); // read potentiometer value
 
-        // Check if mode changed
-        int current_mode;
+        //Print washing machine status
+        if (prevState != currentState) {
+        switch (currentState) {
+            case STATE_OFF:
+                printf("Status: Machine is OFF\r\n");
+                break;
+            case STATE_ON:
+                printf("Status: Machine is ON\r\n");
+                break;
+            case STATE_WASHING:
+                printf("Status: Machine is WASHING\r\n");
+                break;
+            case STATE_PAUSED:
+                printf("Status: Machine is PAUSED\r\n");
+                break;
+            case STATE_FINISHED:
+                printf("Status: Machine is FINISHED\r\n");
+                break;
+        }
+        prevState = currentState;
+    }
+        // Print Door Status
+        if (prev_door_status != door_closed) {
+            if (door_closed) {
+                printf("Door Status: CLOSED\r\n");
+                blueLED=1;
+            } else {
+                printf("Door Status: OPENED\r\n");
+                blueLED=0;
+            }
+            prev_door_status = door_closed;
+    }
+
+        // Chande modes depending on potentiometer value
+        float potValue = potentiometer.read();
+        int current_mode; //variable to determine what mode it is
         if (potValue < 0.33) {
-            current_mode = 0;
+            current_mode = 0; // eco friendly mode
         } else if (potValue >= 0.33 && potValue < 0.66) {
-            current_mode = 1;
+            current_mode = 1; // Delicate mode
         } else {
-            current_mode = 2;
+            current_mode = 2; // Hard wash mode
         }
 
-        if (current_mode != prev_mode && currentState == STATE_ON) {
-            playTone(buzzer, NOTE_D7, 100); // Play tone when the mode changes
-            prev_mode = current_mode;
-        }
-
-        // Button press and state update
+        // Buttons logic and states update
         if (button1.read() == 1) {
             if (currentState == STATE_OFF) {
                 currentState = STATE_ON;
-                playTone(buzzer, NOTE_C5, 100); // Play tone when turning the washing machine ON
+                playTone(buzzer, NOTE_ON, 100); // Play tone when turning the washing machine ON
                 finished_indicator = false; // Reset the finished_indicator
-                remaining_time = 60; // Reset the remaining_time
+                remaining_time = 60; //
+                loading_animation();// Play the loading animation
+                play_startup_song(buzzer); // and Play the startup song
             } else {
                 if (currentState == STATE_FINISHED) {
-                    playTone(buzzer, NOTE_C5, 100); // Play tone when closing the washing machine after finished
+                    playTone(buzzer, NOTE_OFF, 100); // Play tone when closing the washing machine after finished
                 }
                 currentState = STATE_OFF;
             }
-            ThisThread::sleep_for(500ms); // Debounce the button press
+            ThisThread::sleep_for(500ms); 
         } else if (currentState != STATE_OFF && button2.read() == 1) {
             if (currentState == STATE_WASHING) {
                 currentState = STATE_PAUSED;
             } else if (currentState == STATE_PAUSED) {
                 currentState = STATE_WASHING;
             }
-            ThisThread::sleep_for(500ms); // Debounce the button press
+            ThisThread::sleep_for(500ms);
         } else if (currentState == STATE_ON && button3.read() == 1) {
-            currentState = STATE_WASHING;
-            playTone(buzzer, NOTE_F5, 100); // Play tone when the machine starts washing
-            if (current_mode == 0) {
-                remaining_time = 30;
-            } else if (current_mode == 1) {
-                remaining_time = 45;
+            if (door_closed) {
+                currentState = STATE_WASHING;
+                playTone(buzzer, NOTE_START, 100); // Play tone when the machine starts washing
+                if (current_mode == 0) {
+                    remaining_time = 30;
+                    play_washing_song(buzzer); // Play the washing song during the washing state
+                } else if (current_mode == 1) {
+                    remaining_time = 45;
+                    play_washing_song(buzzer); // Play the washing song during the washing state
+                } else {
+                    remaining_time = 60;
+                    play_washing_song(buzzer); // Play the washing song during the washing state
+                }
             } else {
-                remaining_time = 60;
+                printf("Warning: Door is open! Please close the door before starting the washing cycle.\r\n");//warning for when door i open
             }
-            ThisThread::sleep_for(500ms); // Debounce the button press
-        }
+            ThisThread::sleep_for(500ms);
+    }
 
         // RGB LED control and timer logic
         switch (currentState) {
@@ -234,8 +336,9 @@ int main() {
                 greenled.write(1.0);
                 blueled.write(0.0);
                 if (timer.elapsed_time().count() >= 1000000) {
-                    remaining_time -= 1;
-                    timer.reset();
+                 remaining_time -= 1;
+                 updateDisplay(remaining_time);
+                timer.reset();
                 }
                 if (remaining_time <= 0) {
                     currentState = STATE_FINISHED;
@@ -249,47 +352,112 @@ int main() {
                 break;
             case STATE_FINISHED:
                 if (!finished_indicator) {
-                    for (int i = 0; i < 5; i++) {
+                    for (int i = 0; i < 5; i++) {//have led flashing when mashine finished washing
                         redled.write(0.0);
                         greenled.write(1.0);
                         blueled.write(0.0);
-                        playTone(buzzer, NOTE_E6, 200); // Play tone while flashing green light
+                        playTone(buzzer, NOTE_FINISHED, 200); // Play tone while flashing green light
                         ThisThread::sleep_for(100ms);
                         greenled.write(0.0);
                         ThisThread::sleep_for(200ms);
                     }
-                    redled.write(1.0);
-                    finished_indicator = true;
-                    // Turn off the displays after the green LED flashes and becomes red
-                SegDis1.write(0x00);
-                SegDis2.write(0x00);
+                 redled.write(1.0);
+                 finished_indicator = true;
+                // Turn off the displays after the green LED flashes and becomes red
+                 SegDis1.write(0x00);
+                 SegDis2.write(0x00);
             }
             break;
     }
 
-    // Display control for modes and timer
-    if (currentState == STATE_ON && redled.read() == 1.0) {
+        // 7-segment Display control for mode selection and timer
+        if (currentState == STATE_ON && redled.read() == 1.0) {
         if (potValue < 0.33) {
-            SegDis1.write(0x3F);
-            SegDis2.write(0x06);
+            SegDis1.write(0x79);
+            SegDis2.write(0x71);
             
         } else if (potValue >= 0.33 && potValue < 0.66) {
-            SegDis1.write(0x3F);
-            SegDis2.write(0x5B);
+            SegDis1.write(0x5E);
+            SegDis2.write(0x38);
         } else {
-            SegDis1.write(0x3F);
-            SegDis2.write(0x4f);
+            SegDis1.write(0x76);
+            SegDis2.write(0x5E);
         }
-    } else if (currentState == STATE_WASHING || currentState == STATE_PAUSED) {
-        updateDisplay(remaining_time);
-    } else if (currentState != STATE_FINISHED) {
-        SegDis1.write(0x00);
-        SegDis2.write(0x00); // Turn off the display when the red light is off or in other conditions
-    } else if (currentState != STATE_FINISHED) {
-        SegDis2.write(0x00); // Turn off the display when the red light is off or in other conditions
-        SegDis1.write(0x00);
+        } else if (currentState == STATE_WASHING || currentState == STATE_PAUSED) {
+            updateDisplay(remaining_time);
+        } else if (currentState != STATE_FINISHED) {
+            SegDis1.write(0x00);
+            SegDis2.write(0x00); // Turn off the display
     }
 
-    ThisThread::sleep_for(10ms);
-}
+        // Update the display and print the selected washing mode
+        if (current_mode != prev_mode && currentState == STATE_ON) {
+            playTone(buzzer, NOTE_MODE_CHANGE, 100); // Play a tone when changing modes
+            print_selected_mode(current_mode); // Print the selected mode depending on variable prevously used
+            prev_mode = current_mode;
+    }
+
+        //Force sensor Door Mechanic
+        float fsr_value = FSR.read();
+        //You cant open or close the door when machine is washing or paused
+        if (currentState != STATE_WASHING && currentState != STATE_PAUSED) {
+           if (fsr_value > 0.1 && !door_closed) {
+            door_closed = true; //Close and open door variable
+            ThisThread::sleep_for(500ms);
+            } else if (fsr_value > 0.1 && door_closed) {
+            door_closed = false;
+            ThisThread::sleep_for(500ms);
+        }
+    }
+
+         //Temperature Sensor Warning
+         float temperature = TMP.read() * 330; // Read the temperature sensor value in mV
+        if (temperature > 255) { // Check if the temperature is above 257 (converted to mV)
+         printf("Warning: Temperature is too high, Shutting Down and Calling 911.\r\n");
+            for (int i = 0; i < 5; i++) { // Flash the RGB LED red and blue
+             set_rgb_color(1.0f, 0.0f, 0.0f);
+             playTone(buzzer, NOTE_E5, 100); // Play an alert sound on the buzzer
+             ThisThread::sleep_for(200ms);
+             set_rgb_color(0.0f, 0.0f, 1.0f);
+             playTone(buzzer, NOTE_E5, 100); // Play an alert sound on the buzzer
+             ThisThread::sleep_for(200ms);
+             }
+         set_rgb_color(0.0f, 0.0f, 0.0f); // Turn off the RGB LED
+
+         // Display "911" with sliding animation to the left
+         SegDis2.write(hexDis[9]);
+         ThisThread::sleep_for(500ms);
+         SegDis1.write(hexDis[9]);
+         SegDis2.write(hexDis[1]);
+         ThisThread::sleep_for(500ms);
+         SegDis1.write(hexDis[1]);
+         SegDis2.write(hexDis[1]);
+         ThisThread::sleep_for(500ms);
+         SegDis1.write(hexDis[1]);
+         ThisThread::sleep_for(500ms);
+         SegDis1.write(0x00);
+         ThisThread::sleep_for(500ms);
+         SegDis2.write(0x00);
+         ThisThread::sleep_for(500ms);
+         SegDis2.write(hexDis[9]);
+         ThisThread::sleep_for(500ms);
+         SegDis1.write(hexDis[9]);
+         SegDis2.write(hexDis[1]);
+         ThisThread::sleep_for(500ms);
+         SegDis1.write(hexDis[1]);
+         SegDis2.write(hexDis[1]);
+         ThisThread::sleep_for(500ms);
+         SegDis1.write(hexDis[1]);
+    }
+
+        //LDR Cost Efficient Feature
+        float ldr_value = LDR.read() * 100;
+        if (ldr_value > 80 && currentState == STATE_WASHING) { // If LDR value is above 80 and machine is washing
+         currentState = STATE_OFF; // Turn off the washing machine
+         printf("turning off washing machine. Use the washing machine at night for cheaper rates.\r\n");
+         playTone(buzzer, NOTE_OFF, 1000); // Play tone when turning the washing machine OFF
+    }
+    
+    ThisThread::sleep_for(100ms);
+    }
 }
